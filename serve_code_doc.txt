@@ -1,0 +1,172 @@
+The code you've shared is a FastAPI server for making predictions related to product categorization based on text (title and description) and image input. It utilizes machine learning models to predict the product category and extract tags from the title/description. Here’s a breakdown of how the code works:
+
+Main Components and What They Do:
+
+Imports:
+
+Joblib: Used for loading pre-trained models.
+
+Pandas, Numpy: Used for data manipulation and handling.
+
+FastAPI: The web framework used to build the server.
+
+Torch (PyTorch): For loading and working with pre-trained deep learning models (ResNet for images).
+
+Pillow: To handle image preprocessing.
+
+Sentence Transformers: To convert text into embeddings.
+
+sklearn: For TF-IDF feature extraction and Logistic Regression model.
+
+FastAPI Application Setup:
+
+FastAPI (app = FastAPI()): The main FastAPI application instance used to define endpoints.
+
+Loading Pretrained Models:
+
+Loading Pretrained Models with joblib:
+
+clf = joblib.load(os.path.join(MODEL_DIR, "classifier.joblib"))
+scaler = joblib.load(os.path.join(MODEL_DIR, "scaler.joblib"))
+le = joblib.load(os.path.join(MODEL_DIR, "label_encoder.joblib"))
+tfidf = joblib.load(os.path.join(MODEL_DIR, "tfidf.joblib"))
+
+
+clf: A classifier (likely a Logistic Regression model) used to predict the category.
+
+scaler: A scaler (likely a StandardScaler) used to normalize the features before making predictions.
+
+le: A label encoder used to map model predictions (numerical) back to their respective category names.
+
+tfidf: A TF-IDF vectorizer used for extracting important terms from text (for tags).
+
+Pre-trained Deep Learning Models:
+
+Text Embedding Model:
+
+text_model = SentenceTransformer('all-MiniLM-L6-v2')
+
+
+This model (MiniLM) is used to convert product titles and descriptions into fixed-length numerical embeddings that can be used as features for predictions.
+
+Image Embedding Model:
+
+img_model = models.resnet50(pretrained=True)
+img_model.fc = nn.Identity()  # Remove final fully connected layer
+img_model = img_model.to(device)  # Move to GPU or CPU
+img_model.eval()  # Set the model to evaluation mode
+
+
+img_model: A ResNet50 model pre-trained on ImageNet, used to extract image features.
+
+img_transform: A series of transformations to preprocess the image before feeding it into the ResNet model.
+
+Utility Functions:
+
+extract_image_embedding(file_bytes):
+
+Takes image bytes as input, transforms the image into a format suitable for the ResNet model, and extracts the embedding.
+
+This embedding represents the high-level features of the image.
+
+top_tags_from_text(text, top_k):
+
+Uses the tfidf vectorizer to extract the most important terms from the title/description text and returns the top k tags.
+
+API Endpoint (/predict):
+
+The FastAPI endpoint is defined as a POST request:
+
+@app.post("/predict")
+async def predict(image: UploadFile = File(...), title: str = Form(""), description: str = Form(""), top_k_tags: int = Form(5)):
+
+
+Input Parameters:
+
+image: The uploaded image file.
+
+title: The title of the product.
+
+description: The description of the product.
+
+top_k_tags: The number of top tags to return (default is 5).
+
+Text and Image Feature Extraction:
+
+The title and description are combined to form a text input.
+
+The text is passed through the SentenceTransformer model to get a text embedding.
+
+The image file is read and passed through the extract_image_embedding() function to get an image embedding.
+
+Feature Concatenation:
+
+X = np.hstack([text_emb, img_emb]).reshape(1, -1)
+Xs = scaler.transform(X)
+
+
+The text and image embeddings are concatenated into a single feature vector, and the scaler is applied to standardize the features.
+
+Category Prediction:
+
+probs = clf.predict_proba(Xs)[0]
+pred_idx = int(probs.argmax())
+pred_label = le.inverse_transform([pred_idx])[0]
+
+
+The concatenated features are passed into the classifier (clf), and the predicted class probabilities are returned.
+
+The argmax function is used to find the index of the highest probability (i.e., the predicted category).
+
+The label_encoder (le) is used to map this index back to the human-readable category label.
+
+Top Tags and Top Categories:
+
+top_tags = top_tags_from_text(text, top_k=top_k_tags)
+top_n = 3
+top_inds = probs.argsort()[::-1][:top_n]
+top_categories = [{"category": le.inverse_transform([int(i)])[0], "prob": float(probs[int(i)])} for i in top_inds]
+
+
+The top k tags are extracted from the text using the TF-IDF vectorizer.
+
+The top 3 predicted categories (along with their probabilities) are also returned.
+
+Response:
+
+The server returns a JSON response with:
+
+Predicted Category: The most likely category predicted by the model.
+
+Score: The probability score for the predicted category.
+
+Top Categories: The top n predicted categories with their respective probabilities.
+
+Tags: The top k tags extracted from the text.
+
+Example Response:
+{
+  "category": "Clothing",
+  "score": 0.85,
+  "top_categories": [
+    {"category": "Clothing", "prob": 0.85},
+    {"category": "Electronics", "prob": 0.10},
+    {"category": "Home", "prob": 0.05}
+  ],
+  "tags": ["cotton", "round", "t-shirt", "red"]
+}
+
+Summary of How It Works:
+
+Text Embedding: The title and description are embedded into a numerical representation using the SentenceTransformer.
+
+Image Embedding: The image is processed through a ResNet50 model to obtain image features.
+
+Prediction: The text and image features are combined, scaled, and passed through a classifier to predict the product category.
+
+Tag Extraction: The TF-IDF model extracts the top tags from the text (title + description).
+
+Response: Returns the predicted category, top categories with their probabilities, and top tags.
+
+This system can be used for automated product categorization and tag generation, which is highly useful in eCommerce platforms. Let me know if you'd like further clarification or any specific modifications to this!
+
